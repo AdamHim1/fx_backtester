@@ -1,63 +1,44 @@
-[build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
-
-[project]
+[tool.poetry]
 name = "fx_backtester"
-version = "0.1.0"
+version = "0.0.0"
 description = "A dashboard for backtesting FX strategies."
+authors = ["Adam Him <adam.him@dauphine.eu>"]
+license = "MIT"
 readme = "README.rst"
-authors = [
-  {name = "Adam Him", email = "adam.him@dauphine.eu"}
-]
-maintainers = [
-  {name = "Adam Him", email = "adam.him@dauphine.eu"}
-]
-classifiers = [
-
-]
-license = {text = "MIT license"}
-dependencies = [
-  
-]
-
-[project.optional-dependencies]
-dev = [
-    "coverage",  # testing
-    "mypy",  # linting
-    "pytest",  # testing
-    "ruff"  # linting
-]
-
-[project.urls]
-
-bugs = "https://github.com/AdamHim1/fx_backtester/issues"
-changelog = "https://github.com/AdamHim1/fx_backtester/blob/master/changelog.md"
 homepage = "https://github.com/AdamHim1/fx_backtester"
+repository = "https://github.com/AdamHim1/fx_backtester"
+documentation = "https://github.com/AdamHim1/fx_backtester/blob/master/changelog.md"
 
-[tool.setuptools]
-package-dir = {"" = "src"}
+[tool.poetry.dependencies]
+python = ">=3.11,<4.0"
+pybacktestchain = "^0.2.1"  
+pandas = "^2.0.0"
+numpy = "^1.24.0"
+matplotlib = "^3.7.0"
+dash = "^2.12.0"
+plotly = "^5.15.0"
+numba = "^0.60.0"
+python-semantic-release = "^9.15.2"
 
-[tool.setuptools.package-data]
-"*" = ["*.*"]
+[tool.poetry.dev-dependencies]
+pytest = "^7.4.0"
+mypy = "^1.0.0"
+coverage = "^7.0.0"
+ruff = "^0.1.0"
+
+[tool.poetry.group.dev.dependencies]
+ipykernel = "^6.29.5"
+python-semantic-release = "^9.15.2"
+
+[build-system]
+requires = ["poetry>=1.1.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.semantic_release]
+version_variable = "pyproject.toml:version"
+version_toml = [
+    "pyproject.toml:tool.poetry.version",
+]
 
 
-
-
-# Mypy
-# ----
-
-[tool.mypy]
-files = "."
-
-# Use strict defaults
-strict = true
-warn_unreachable = true
-warn_no_return = true
-
-[[tool.mypy.overrides]]
-# Don't require test functions to include types
-module = "tests.*"
-allow_untyped_defs = true
-disable_error_code = "attr-defined"
 
