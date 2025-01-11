@@ -1,4 +1,4 @@
-"""Top-level package for FX Strategies Backtester."""
+"""Top-level package for FX Strategies Backtesting"""
 
 __author__ = """Adam Him"""
 __email__ = 'adam.him@dauphine.eu'
