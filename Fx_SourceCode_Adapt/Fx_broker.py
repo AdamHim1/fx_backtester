@@ -1,35 +1,31 @@
+import pandas as pd
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-import pandas as pd
-import os
+
+import os 
 import pickle
-from Fx_SourceCode_Adapt.Fx_data_module import get_fx_data  # Import the data functions for FX
-from Fx_SourceCode_Adapt.Fx_utils import generate_random_name  # If any other utils are needed for FX data
+from Fx_SourceCode_Adapt.Fx_data_module import UNIVERSE_SEC, FirstTwoMoments, get_fx_pairs_data, DataModule, Information
+from Fx_SourceCode_Adapt.Fx_utils import generate_random_name
+from Fx_SourceCode_Adapt.Fx_blockchain import Block, Blockchain
 from numba import jit 
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+from datetime import timedelta, datetime
+
+#---------------------------------------------------------
+# Classes
+#---------------------------------------------------------
 
 @dataclass
 class Position:
-    """Position object to track the FX pair's position details"""
-    pair: str      # Currency pair (e.g., EURUSD=X)
-    quantity: int  # Position size
-    entry_price: float  # Entry price for the FX pair
-    
-class StopLoss:
-    def __init__(self, threshold: float):
-        self.threshold = threshold
-
-    def check_loss(self, position: Position, current_price: float):
-        if (position.entry_price - current_price) / position.entry_price >= self.threshold:
-            return True  # Trigger stop loss
-        return False    
+    ticker: str
+    quantity: int
+    entry_price: float
 
 @dataclass
 class Broker:
-    """Broker class adapted for FX backtesting"""
     cash: float 
     positions: dict = None
     transaction_log: pd.DataFrame = None
@@ -37,7 +33,8 @@ class Broker:
     verbose: bool = True
 
     def initialize_blockchain(self, name: str):
-        """Initializes blockchain to store the backtest results."""
+        # Check if the blockchain is already initialized and stored in the blockchain folder
+        # if folder blockchain does not exist, create it
         if not os.path.exists('blockchain'):
             os.makedirs('blockchain')
         chains = os.listdir('blockchain')
@@ -50,60 +47,66 @@ class Broker:
             return
 
         self.blockchain = Blockchain(name)
+        # Store the blockchain
         self.blockchain.store()
 
         if self.verbose:
-            logging.info(f"Blockchain with name {name} initialized and stored.")
+            logging.info(f"Blockchain with name {name} initialized and stored in the blockchain folder.")
 
     def __post_init__(self):
-        """Post initialization to set up the positions and transaction log"""
+        # Initialize positions as a dictionary of Position objects
         if self.positions is None:
             self.positions = {}
+        # Initialize the transaction log as an empty DataFrame if none is provided
         if self.transaction_log is None:
-            self.transaction_log = pd.DataFrame(columns=['Date', 'Action', 'Pair', 'Quantity', 'Price', 'Cash'])
+            self.transaction_log = pd.DataFrame(columns=['Date', 'Action', 'Ticker', 'Quantity', 'Price', 'Cash'])
+    
+
+        # Initialize the entry prices as a dictionary
         if self.entry_prices is None:
             self.entry_prices = {}
 
-    def buy(self, pair: str, quantity: int, price: float, date: datetime):
-        """Buy a currency pair in the portfolio"""
+    def buy(self, ticker: str, quantity: int, price: float, date: datetime):
+        """Executes a buy order for the specified ticker."""
         total_cost = price * quantity
         if self.cash >= total_cost:
             self.cash -= total_cost
-            if pair in self.positions:
-                position = self.positions[pair]
+            if ticker in self.positions:
+                position = self.positions[ticker]
                 new_quantity = position.quantity + quantity
                 new_entry_price = ((position.entry_price * position.quantity) + (price * quantity)) / new_quantity
                 position.quantity = new_quantity
                 position.entry_price = new_entry_price
             else:
-                self.positions[pair] = Position(pair, quantity, price)
-            self.log_transaction(date, 'BUY', pair, quantity, price)
-            self.entry_prices[pair] = price
+
+                self.positions[ticker] = Position(ticker, quantity, price)
+            self.log_transaction(date, 'BUY', ticker, quantity, price)
+            self.entry_prices[ticker] = price
         else:
             if self.verbose:
-                logging.warning(f"Not enough cash to buy {quantity} units of {pair} at {price}. Available cash: {self.cash}")
-
-    def sell(self, pair: str, quantity: int, price: float, date: datetime):
-        """Sell a currency pair in the portfolio"""
-        if pair in self.positions and self.positions[pair].quantity >= quantity:
-            position = self.positions[pair]
+                logging.warning(f"Not enough cash to buy {quantity} shares of {ticker} at {price}. Available cash: {self.cash}")
+    
+    def sell(self, ticker: str, quantity: int, price: float, date: datetime):
+        """Executes a sell order for the specified ticker."""
+        if ticker in self.positions and self.positions[ticker].quantity >= quantity:
+            position = self.positions[ticker]
             position.quantity -= quantity
             self.cash += price * quantity
 
             if position.quantity == 0:
-                del self.positions[pair]
-                del self.entry_prices[pair]
-            self.log_transaction(date, 'SELL', pair, quantity, price)
+                del self.positions[ticker]
+                del self.entry_prices[ticker]
+            self.log_transaction(date, 'SELL', ticker, quantity, price)
         else:
             if self.verbose:
-                logging.warning(f"Not enough units of {pair} to sell {quantity}. Position size: {self.positions.get(pair, 0)}")
-
-    def log_transaction(self, date, action, pair, quantity, price):
-        """Log every transaction to the transaction log"""
+                logging.warning(f"Not enough shares to sell {quantity} shares of {ticker}. Position size: {self.positions.get(ticker, 0)}")
+    
+    def log_transaction(self, date, action, ticker, quantity, price):
+        """Logs the transaction."""
         transaction = pd.DataFrame([{
             'Date': date,
             'Action': action,
-            'Pair': pair,
+            'Ticker': ticker,
             'Quantity': quantity,
             'Price': price,
             'Cash': self.cash
@@ -112,64 +115,175 @@ class Broker:
         self.transaction_log = pd.concat([self.transaction_log, transaction], ignore_index=True)
 
     def get_cash_balance(self):
-        """Get the current cash balance"""
         return self.cash
 
     def get_transaction_log(self):
-        """Return the transaction log"""
         return self.transaction_log
 
     def get_portfolio_value(self, market_prices: dict):
-        """Calculate the current value of the portfolio in terms of cash and open positions"""
+        """Calculates the total portfolio value based on the current market prices."""
         portfolio_value = self.cash
-        for pair, position in self.positions.items():
-            portfolio_value += position.quantity * market_prices.get(pair, 0)
+        for ticker, position in self.positions.items():
+            portfolio_value += position.quantity * market_prices[ticker]
         return portfolio_value
-
+    
     def execute_portfolio(self, portfolio: dict, prices: dict, date: datetime):
-        """Execute the trades in the portfolio based on weights and available cash"""
-        # First handle sell orders
-        for pair, weight in portfolio.items():
-            price = prices.get(pair)
+        """Executes the trades for the portfolio based on the generated weights."""
+        
+        # First, handle all the sell orders to free up cash
+        for ticker, weight in portfolio.items():
+            price = prices.get(ticker)
             if price is None:
                 if self.verbose:
-                    logging.warning(f"Price for {pair} not available on {date}")
+                    logging.warning(f"Price for {ticker} not available on {date}")
                 continue
             
             total_value = self.get_portfolio_value(prices)
             target_value = total_value * weight
-            current_value = self.positions.get(pair, Position(pair, 0, 0)).quantity * price
+            current_value = self.positions.get(ticker, Position(ticker, 0, 0)).quantity * price
             diff_value = target_value - current_value
             quantity_to_trade = int(diff_value / price)
-
+            
             if quantity_to_trade < 0:
-                self.sell(pair, abs(quantity_to_trade), price, date)
-
-        # Then handle buy orders
-        for pair, weight in portfolio.items():
-            price = prices.get(pair)
+                self.sell(ticker, abs(quantity_to_trade), price, date)
+        
+        # Then, handle all the buy orders, checking if there's enough cash
+        for ticker, weight in portfolio.items():
+            price = prices.get(ticker)
             if price is None:
                 if self.verbose:
-                    logging.warning(f"Price for {pair} not available on {date}")
+                    logging.warning(f"Price for {ticker} not available on {date}")
                 continue
-
+      
             total_value = self.get_portfolio_value(prices)
             target_value = total_value * weight
-            current_value = self.positions.get(pair, Position(pair, 0, 0)).quantity * price
+            current_value = self.positions.get(ticker, Position(ticker, 0, 0)).quantity * price
             diff_value = target_value - current_value
             quantity_to_trade = int(diff_value / price)
-
+           
             if quantity_to_trade > 0:
                 available_cash = self.get_cash_balance()
                 cost = quantity_to_trade * price
                 
                 if cost <= available_cash:
-                    self.buy(pair, quantity_to_trade, price, date)
+                    self.buy(ticker, quantity_to_trade, price, date)
                 else:
                     if self.verbose:
-                        logging.warning(f"Not enough cash to buy {quantity_to_trade} of {pair} on {date}. Needed: {cost}, Available: {available_cash}")
-                        logging.info(f"Buying as many units of {pair} as possible with available cash.")
+                        logging.warning(f"Not enough cash to buy {quantity_to_trade} of {ticker} on {date}. Needed: {cost}, Available: {available_cash}")
+                        logging.info(f"Buying as many shares of {ticker} as possible with available cash.")
                     quantity_to_trade = int(available_cash / price)
-                    self.buy(pair, quantity_to_trade, price, date)
+                    self.buy(ticker, quantity_to_trade, price, date)
 
+    def get_transaction_log(self):
+        """Returns the transaction log."""
+        return self.transaction_log
 
+@dataclass
+class RebalanceFlag:
+    def time_to_rebalance(self, t: datetime):
+        pass 
+
+# Implementation of e.g. rebalancing at the end of each month
+@dataclass
+class EndOfMonth(RebalanceFlag):
+    def time_to_rebalance(self, t: datetime):
+        # Convert to pandas Timestamp for convenience
+        pd_date = pd.Timestamp(t)
+        # Get the last business day of the month
+        last_business_day = pd_date + pd.offsets.BMonthEnd(0)
+        # Check if the given date matches the last business day
+        return pd_date == last_business_day
+
+@dataclass
+class RiskModel:
+    def trigger_stop_loss(self, t: datetime, portfolio: dict, prices: dict):
+        pass
+
+@dataclass
+class StopLoss(RiskModel):
+    threshold: float = 0.1
+    def trigger_stop_loss(self, t: datetime, portfolio: dict, prices: dict, broker: Broker):
+        
+        for ticker, position in list(broker.positions.items()):
+            entry_price = broker.entry_prices[ticker]
+            current_price = prices.get(ticker)
+            if current_price is None:
+                logging.warning(f"Price for {ticker} not available on {t}")
+                continue
+            # Calculate the loss percentage
+            loss = (current_price - entry_price) / entry_price
+            if loss < -self.threshold:
+                logging.info(f"Stop loss triggered for {ticker} at {t}. Selling all shares.")
+                broker.sell(ticker, position.quantity, current_price, t)
+@dataclass
+class Backtest:
+    initial_date: datetime
+    final_date: datetime
+    universe = [
+    "EURUSD=X", "USDJPY=X", "GBPUSD=X", "AUDUSD=X", "USDCAD=X", "USDCHF=X", "NZDUSD=X",  
+    "USDTRY=X", "USDMXN=X", "USDBRL=X", "USDINR=X", "USDSGD=X", "USDZAR=X", "USDCLP=X",  
+    "USDPLN=X", "USDHUF=X", "USDRUB=X", "USDTHB=X", "USDKRW=X", "USDIDR=X", "USDCNY=X"  ]
+    information_class : type  = Information
+    s: timedelta = timedelta(days=360)
+    time_column: str = 'Date'
+    company_column: str = 'ticker'
+    adj_close_column : str ='Adj Close'
+    rebalance_flag : type = EndOfMonth
+    risk_model : type = StopLoss
+    initial_cash: int = 1000000  # Initial cash in the portfolio
+    name_blockchain: str = 'backtest'
+    verbose: bool = True
+    broker = Broker(cash=initial_cash, verbose=verbose)
+    
+    def __post_init__(self):
+        self.backtest_name = generate_random_name()
+        self.broker.initialize_blockchain(self.name_blockchain)
+
+    def run_backtest(self):
+        logging.info(f"Running backtest from {self.initial_date} to {self.final_date}.")
+        logging.info(f"Retrieving price data for universe")
+        self.risk_model = self.risk_model(threshold=0.1)
+        # self.initial_date to yyyy-mm-dd format
+        init_ = self.initial_date.strftime('%Y-%m-%d')
+        # self.final_date to yyyy-mm-dd format
+        final_ = self.final_date.strftime('%Y-%m-%d')
+        df = get_fx_pairs_data(self.universe, init_, final_)
+
+        # Initialize the DataModule
+        data_module = DataModule(df)
+
+        # Create the Information object
+        info = self.information_class(s = self.s, 
+                                    data_module = data_module,
+                                    time_column=self.time_column,
+                                    company_column=self.company_column,
+                                    adj_close_column=self.adj_close_column)
+        
+        # Run the backtest
+        for t in pd.date_range(start=self.initial_date, end=self.final_date, freq='D'):
+            
+            if self.risk_model is not None:
+                portfolio = info.compute_portfolio(t, info.compute_information(t))
+                prices = info.get_prices(t)
+                self.risk_model.trigger_stop_loss(t, portfolio, prices, self.broker)
+           
+            if self.rebalance_flag().time_to_rebalance(t):
+                logging.info("-----------------------------------")
+                logging.info(f"Rebalancing portfolio at {t}")
+                information_set = info.compute_information(t)
+                portfolio = info.compute_portfolio(t, information_set)
+                prices = info.get_prices(t)
+                self.broker.execute_portfolio(portfolio, prices, t)
+
+        logging.info(f"Backtest completed. Final portfolio value: {self.broker.get_portfolio_value(info.get_prices(self.final_date))}")
+        df = self.broker.get_transaction_log()
+
+        # create backtests folder if it does not exist
+        if not os.path.exists('backtests'):
+            os.makedirs('backtests')
+
+        # save to csv, use the backtest name 
+        df.to_csv(f"backtests/{self.backtest_name}.csv")
+
+        # store the backtest in the blockchain
+        self.broker.blockchain.add_block(self.backtest_name, df.to_string())
