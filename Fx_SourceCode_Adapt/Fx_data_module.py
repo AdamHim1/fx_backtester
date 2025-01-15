@@ -3,7 +3,6 @@ import pandas as pd
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import logging
-from sec_cik_mapper import StockMapper
 import numpy as np
 
 # Setup logging

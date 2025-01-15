@@ -172,8 +172,4 @@ class Broker:
                     quantity_to_trade = int(available_cash / price)
                     self.buy(pair, quantity_to_trade, price, date)
 
-    def get_transaction_log(self):
-        """Returns the transaction log"""
-        return self.transaction_log
-
 

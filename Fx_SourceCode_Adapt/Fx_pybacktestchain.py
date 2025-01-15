@@ -1,8 +1,6 @@
 import pandas as pd
 import numpy as np
 import logging
-from Fx_SourceCode_Adapt.Fx_broker import Broker
-from Fx_SourceCode_Adapt.Fx_data_module import get_fx_data, get_fx_pairs_data
 from datetime import datetime
 from numba import jit
 from dataclasses import dataclass
@@ -11,7 +9,6 @@ from dataclasses import dataclass
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-@dataclass
 class FxBacktest:
     initial_date: datetime
     final_date: datetime
@@ -30,11 +27,6 @@ class FxBacktest:
         self.name_blockchain = name_blockchain
         self.verbose = verbose
 
-    def __post_init__(self):
-        # Initialize the broker with initial cash
-        self.broker = Broker(cash=self.initial_cash)
-        logging.info(f"Backtest initialized from {self.initial_date} to {self.final_date}.")
-    
     def run_backtest(self):
         # Get historical FX data for the universe
         logging.info("Retrieving FX data for the universe.")
@@ -64,7 +56,6 @@ class FxBacktest:
         # Log the transaction at the end of the day
         logging.info(f"Processed transactions for {t}. Current cash: {self.broker.get_cash_balance()}.")
 
-# Test the backtest logic
 def test_backtest():
     # Create the backtest with a list of FX pairs
     fx_pairs = ["EURUSD=X", "GBPUSD=X", "USDJPY=X"]
