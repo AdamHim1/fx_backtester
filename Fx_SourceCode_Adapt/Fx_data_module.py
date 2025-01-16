@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 import logging 
 from scipy.optimize import minimize
 import numpy as np
+from scipy.optimize import minimize
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -192,3 +193,4 @@ class FirstTwoMoments(Information):
         information_set['covariance_matrix'] = covariance_matrix
         information_set['companies'] = data.columns.to_numpy()
         return information_set
+
