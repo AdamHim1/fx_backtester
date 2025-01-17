@@ -5,7 +5,7 @@
 
 import unittest
 
-from fx_backtester import fx_backtester
+from fx_backtester import Fx_Dashboard
 
 
 class TestFx_backtester(unittest.TestCase):
