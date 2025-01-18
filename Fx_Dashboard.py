@@ -4,11 +4,12 @@ from dash.dependencies import Input, Output, State
 from datetime import datetime, timedelta
 import pandas as pd
 import plotly.graph_objs as go
-from Fx_SourceCode_Adapt.Fx_data_module import get_fx_pairs_data, FirstTwoMoments, MaxSharpeRatio,  MomentumStrategy, MeanReversionStrategy, VolatilityStrategy, CorrelationStrategy
+from Fx_SourceCode_Adapt.Fx_data_module import get_fx_pairs_data, FirstTwoMoments, MaxSharpeRatio, MomentumStrategy, MeanReversionStrategy, VolatilityStrategy
 from Fx_SourceCode_Adapt.Fx_broker import Backtest, StopLoss, Broker, Position
 import logging
 import random
 import string
+import numpy as np
 
 # Remove yfinance error logs
 logging.getLogger("yfinance").setLevel(logging.CRITICAL)
@@ -44,12 +45,12 @@ universe_options = [{"label": security, "value": symbol} for symbol, security in
 app = dash.Dash(__name__)
 
 app.layout = html.Div([
-    html.H1("FX Strategies Backtester", style={'textAlign': 'center', 'marginBottom': '20px'}),
+    html.H1("FX Strategies Backtester", style={'textAlign': 'center', 'marginBottom': '20px', 'color': 'white'}),
 
     # Date Selectors (Initial and Final Date)
     html.Div([
         html.Div([
-            html.Label("Initial Date:", style={'fontSize': '18px', 'fontWeight': 'bold'}),
+            html.Label("Initial Date:", style={'fontSize': '18px', 'fontWeight': 'bold', 'color': 'white'}),
             dcc.DatePickerSingle(
                 id='initial-date',
                 date='2019-01-01',
@@ -59,7 +60,7 @@ app.layout = html.Div([
         ], style={'display': 'inline-block', 'width': '48%', 'textAlign': 'center', 'marginRight': '20px'}),
 
         html.Div([
-            html.Label("Final Date:", style={'fontSize': '18px', 'fontWeight': 'bold'}),
+            html.Label("Final Date:", style={'fontSize': '18px', 'fontWeight': 'bold', 'color': 'white'}),
             dcc.DatePickerSingle(
                 id='final-date',
                 date='2020-01-01',
@@ -71,7 +72,7 @@ app.layout = html.Div([
 
     # FX Strategy Dropdown
     html.Div([
-        html.Label("FX Strategy:", style={'fontSize': '18px', 'fontWeight': 'bold'}),
+        html.Label("FX Strategy:", style={'fontSize': '18px', 'fontWeight': 'bold', 'color': 'white'}),
         dcc.Dropdown(
             id='information-class',
             options=[
@@ -79,61 +80,47 @@ app.layout = html.Div([
                 {'label': 'MomentumStrategy', 'value': 'momentum_strategy'},
                 {'label': 'MeanReversionStrategy', 'value': 'mean_reversion_strategy'},
                 {'label': 'VolatilityStrategy', 'value': 'volatility_strategy'},
-                {'label': 'MaxSharpeRatio', 'value': 'max_sharpe_ratio'},
-                {'label': 'CorrelationStrategy', 'value': 'correlation_strategy'}
+                {'label': 'MaxSharpeRatio', 'value': 'max_sharpe_ratio'}
             ],
             value='first_two_moments',
             clearable=False,
-            style={'width': '300px', 'margin': '0 auto'}
+            style={'width': '300px', 'margin': '0 auto', 'backgroundColor': '#444', 'color': 'black'}
         )
     ], style={'textAlign': 'center', 'marginBottom': '20px'}),
 
     # FX Pairs Selector
     html.Div([
-        html.Label("Select FX Pairs:", style={'fontSize': '18px', 'fontWeight': 'bold'}),
+        html.Label("Select FX Pairs:", style={'fontSize': '18px', 'fontWeight': 'bold', 'color': 'white'}),
         dcc.Dropdown(
             id='universe-dropdown',
             options=universe_options,
             value=[],
             multi=True,
             placeholder='Pick one or more FX pairs',
-            style={'width': '400px', 'margin': '0 auto'}
+            style={'width': '400px', 'margin': '0 auto', 'backgroundColor': '#444', 'color': 'black'}
         )
     ], style={'textAlign': 'center', 'marginBottom': '20px'}),
 
     # Run Backtest Button
     html.Button("Run Backtest", id='run-button', n_clicks=0, 
-                style={'display': 'block', 'margin': '0 auto', 'marginTop': '20px', 'marginBottom': '20px'}),
+                style={'display': 'block', 'margin': '0 auto', 'marginTop': '20px', 'marginBottom': '20px', 'backgroundColor': '#007bff', 'color': 'white', 'border': 'none', 'padding': '10px 20px', 'fontSize': '16px'}),
 
-    # Portfolio Summary Table and Graphs
+    # Currency Performance Statistics Table and Graphs
     html.Div([
-        html.H3("Final Portfolio Summary", style={'fontSize': '20px', 'fontWeight': 'bold'}),
-        dash_table.DataTable(id='portfolio-summary-table', style_table={'overflowX': 'auto'})
+        html.H3("Final Portfolio's Currencies Statistics", style={'fontSize': '20px', 'fontWeight': 'bold', 'color': 'white'}),
+        dash_table.DataTable(id='stats-table', style_table={'overflowX': 'auto', 'backgroundColor': '#333'},
+                             style_cell={'textAlign': 'center', 'color': 'white', 'backgroundColor': '#333'})
     ], style={'marginTop': '40px', 'textAlign': 'center'}),
-
-    dcc.Graph(id='correlation-graph', style={'marginTop': '40px'}),
 
     dcc.Graph(id='portfolio-value-graph', style={'marginTop': '40px'}),
 
-    # Statistics Table (Daily Returns) placed at the bottom
-    html.Div([
-        html.H3("Statistics (Daily Returns)", style={'fontSize': '20px', 'fontWeight': 'bold'}),
-        dash_table.DataTable(
-            id='stats-table',
-            style_table={'overflowX': 'auto'},
-            style_cell={'textAlign': 'center'}
-        )
-    ], style={'marginTop': '40px', 'textAlign': 'center'})
-], style={'backgroundColor': '#f4f4f4', 'padding': '20px'})
+], style={'backgroundColor': '#222222', 'padding': '20px'})
 
 @app.callback(
     [
-        Output('portfolio-summary-table', 'data'),
-        Output('portfolio-summary-table', 'columns'),
-        Output('correlation-graph', 'figure'),
-        Output('portfolio-value-graph', 'figure'),
         Output('stats-table', 'data'),
-        Output('stats-table', 'columns')
+        Output('stats-table', 'columns'),
+        Output('portfolio-value-graph', 'figure')
     ],
     Input('run-button', 'n_clicks'),
     State('initial-date', 'date'),
@@ -143,7 +130,7 @@ app.layout = html.Div([
 )
 def run_backtest(n_clicks, init_date_str, final_date_str, information_class_str, selected_symbols):
     if n_clicks == 0:
-        return [], [], go.Figure(), go.Figure(), [], []
+        return [], [], go.Figure()
 
     init_date = datetime.strptime(init_date_str, "%Y-%m-%d")
     final_date = datetime.strptime(final_date_str, "%Y-%m-%d")
@@ -154,13 +141,11 @@ def run_backtest(n_clicks, init_date_str, final_date_str, information_class_str,
         'momentum_strategy': MomentumStrategy,
         'mean_reversion_strategy': MeanReversionStrategy,
         'volatility_strategy': VolatilityStrategy,
-        'max_sharpe_ratio': MaxSharpeRatio,
-        'correlation_strategy': CorrelationStrategy
+        'max_sharpe_ratio': MaxSharpeRatio
     }.get(information_class_str, FirstTwoMoments)
 
-    # -------------------------
-    # 1) BACKTEST AND BROKER
-    # -------------------------
+   # Performing the Backtest
+   
     backtest = Backtest(
         initial_date=init_date,
         final_date=final_date,
@@ -180,7 +165,6 @@ def run_backtest(n_clicks, init_date_str, final_date_str, information_class_str,
     # We'll track daily portfolio value
     portfolio_values = []
     last_prices = {}
-    rebalance_dates = []
 
     current_date = init_date
     while current_date <= final_date:
@@ -201,10 +185,6 @@ def run_backtest(n_clicks, init_date_str, final_date_str, information_class_str,
                 broker.buy(ticker, quantity, price, current_date)
             elif action == 'SELL':
                 broker.sell(ticker, quantity, price, current_date)
-
-        # Check for rebalancing
-        if backtest.rebalance_flag().time_to_rebalance(current_date):
-            rebalance_dates.append(current_date)
 
         # Get current market prices using the adapted get_fx_pairs_data function
         market_prices = {}
@@ -233,155 +213,64 @@ def run_backtest(n_clicks, init_date_str, final_date_str, information_class_str,
 
         current_date += timedelta(days=1)
 
-    # -------------------------
-    # 2) PREPARE SUMMARY TABLE
-    # -------------------------
+    # Compute and Display Portfolio's Performance 
+    df_portfolio = pd.DataFrame(portfolio_values, columns=['Date', 'Portfolio Perf'])
+    fig_portfolio = go.Figure()
+    fig_portfolio.add_trace(
+        go.Scatter(
+            x=df_portfolio['Date'], 
+            y=df_portfolio['Portfolio Perf'], 
+            mode='lines', 
+            name='Portfolio Perf'
+        )
+    )
+    fig_portfolio.update_layout(
+        title="Portfolio's Performance",
+        xaxis_title="Date",
+        yaxis_title="Portfolio Perf",
+        plot_bgcolor='black',
+        paper_bgcolor='black',
+        font=dict(color='white')
+    )
+
+    # Prepare Currency Performance Data for Statistics Table
     final_market_prices = {
         ticker: last_prices.get(ticker, 0) for ticker in broker.positions.keys()
     }
     summary_data = []
     for ticker, position in broker.positions.items():
+        avg_return = 0
+        std_return = 0
+        try:
+            data = get_fx_pairs_data([ticker], init_date_str, final_date_str)
+            if not data.empty:
+                daily_returns = data['Close'].pct_change().dropna()
+                avg_return = daily_returns.mean() * 100
+                std_return = daily_returns.std() * 100
+                
+        except Exception:
+            pass
+        
         summary_data.append({
             "Ticker": ticker,
-            "Shares": position.quantity,
+            "Annualized Return (%)": round(avg_return, 2),
+            "Annualized Std Dev (%)": round(std_return, 2),
             "Last Price": final_market_prices[ticker],
-            "Value": position.quantity * final_market_prices[ticker]
+            "Perf": position.quantity * final_market_prices[ticker]
         })
 
-    total_value = sum(item["Value"] for item in summary_data) + broker.cash
-    summary_data.append({
-        "Ticker": "Total",
-        "Shares": "-",
-        "Last Price": "-",
-        "Value": total_value
-    })
+    # Sort the currencies by annualized return
+    summary_data = sorted(summary_data, key=lambda x: x['Annualized Return (%)'], reverse=True)
 
     summary_columns = [
         {"name": "Ticker", "id": "Ticker"},
-        {"name": "Shares", "id": "Shares"},
+        {"name": "Annualized Return (%)", "id": "Annualized Return (%)"},
+        {"name": "Annualized Std Dev (%)", "id": "Annualized Std Dev (%)"},
         {"name": "Last Price", "id": "Last Price"},
-        {"name": "Value", "id": "Value"}
+        {"name": "Value", "id": "Perf"}
     ]
 
-    # -------------------------
-    # 3) CORRELATION GRAPH
-    # -------------------------
-    # Build a DataFrame of daily closes for each selected symbol so we can compute daily returns and correlation.
-    price_df = pd.DataFrame()
-    for symbol in selected_symbols:
-        data = get_fx_pairs_data([symbol], init_date_str, final_date_str)
-        if not data.empty:
-            # Align on date index to handle merges properly
-            data = data[['Date','Close']].set_index('Date')
-            data.index = pd.to_datetime(data.index)
-            price_df[symbol] = data['Close']
-
-    # Drop any days that are all NaN
-    price_df.dropna(how='all', inplace=True)
-
-    # Compute daily returns and then plot correlation heatmap
-    ret_df = price_df.pct_change().dropna()
-    if not ret_df.empty:
-        corr_matrix = ret_df.corr()
-        corr_fig = go.Figure(
-            data=go.Heatmap(
-                z=corr_matrix.values,
-                x=corr_matrix.columns,
-                y=corr_matrix.columns,
-                colorscale='RdYlGn',
-                zmin=-1,
-                zmax=1
-            )
-        )
-        corr_fig.update_layout(title="Correlation Heatmap of Daily Returns")
-    else:
-        corr_fig = go.Figure()
-
-    # -------------------------
-    # 4) PORTFOLIO VALUE GRAPH
-    # -------------------------
-    df_portfolio = pd.DataFrame(portfolio_values, columns=['Date', 'Portfolio Value'])
-    fig_portfolio = go.Figure()
-    fig_portfolio.add_trace(
-        go.Scatter(
-            x=df_portfolio['Date'], 
-            y=df_portfolio['Portfolio Value'], 
-            mode='lines', 
-            name='Portfolio Value'
-        )
-    )
-    fig_portfolio.add_trace(
-        go.Scatter(
-            x=df_portfolio['Date'],
-            y=[1_000_000] * len(df_portfolio),
-            mode='lines',
-            line=dict(color='red', dash='dash'),
-            name='1M Threshold'
-        )
-    )
-
-    # Mark rebalancing points
-    for reb_date in rebalance_dates:
-        marker_day = reb_date - timedelta(days=1)
-        val = df_portfolio.loc[df_portfolio['Date'] == marker_day, 'Portfolio Value']
-        if not val.empty:
-            fig_portfolio.add_trace(
-                go.Scatter(
-                    x=[marker_day],
-                    y=[val.values[0]],
-                    mode='markers',
-                    marker=dict(color='blue', size=10, symbol='circle'),
-                    showlegend=False
-                )
-            )
-    fig_portfolio.update_layout(
-        title="Portfolio Value Over Time",
-        xaxis_title="Date",
-        yaxis_title="Portfolio Value"
-    )
-
-    # -------------------------
-    # 5) STATISTICS TABLE
-    # -------------------------
-    stats_data = []
-    if not ret_df.empty:
-        for symbol in ret_df.columns:
-            avg_return = ret_df[symbol].mean() * 100
-            std_return = ret_df[symbol].std() * 100
-            stats_data.append({
-                'Ticker': symbol,
-                'Average Return (%)': round(avg_return, 2),
-                'Std Dev (%)': round(std_return, 2)
-            })
-    
-    # Entire portfolio stats
-    if len(df_portfolio) > 1:
-        df_portfolio['Daily Return'] = df_portfolio['Portfolio Value'].pct_change()
-        daily_returns = df_portfolio['Daily Return'].dropna()
-        
-        if not daily_returns.empty:
-            avg_port = daily_returns.mean() * 100
-            std_port = daily_returns.std() * 100
-            stats_data.append({
-                'Ticker': 'Entire Portfolio',
-                'Average Return (%)': round(avg_port, 2),
-                'Std Dev (%)': round(std_port, 2)
-            })
-
-    stats_columns = [
-        {'name': 'Ticker', 'id': 'Ticker'},
-        {'name': 'Average Return (%)', 'id': 'Average Return (%)'},
-        {'name': 'Std Dev (%)', 'id': 'Std Dev (%)'}
-    ]
-
-    return (
-        summary_data,             
-        summary_columns,         
-        corr_fig,                 
-        fig_portfolio,            
-        stats_data,               
-        stats_columns            
-    )
+    return summary_data, summary_columns, fig_portfolio
 
 if __name__ == '__main__':
     app.run_server(debug=True)
